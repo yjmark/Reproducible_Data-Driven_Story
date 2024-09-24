@@ -1,0 +1,21 @@
+
+
+1. Storyboard: Uploaded (the first file)
+2. Link for GitHub Repo: https://github.com/yjmark/Reproducible_Data-Driven_Story
+3. A knitted HTML: Uploaded (the second file)
+4. A reflection on my article:
+  a. what were you aiming for? 
+    - I am interested in old buildings and wanted to find out how those in Philadelphia managed well, and introduce Philadelphia's relevant policy.
+  b.  what went well, what didn't?
+    - Found nice map images and a great introduction to attract readers' interests 
+    - Data integration (year to age) stands of readers
+    - Good explanation of data
+    - Still have to conclude the story: have to introduce there is still blind spot of old building management in Philadelphia
+    - Couldn't solve coordination issue (the map very bottom of the article)
+  c. what did you learn? did you try anything new?
+    - Learned the city manages old buildings very systematically, but not many.
+    - Tried to find some new data source other than ACS
+  d. if you had an infinite amount of time and could make it perfect, what would you like to see improved in the next draft?
+    - Make conclusion
+    - Make story intersection more natural
+
