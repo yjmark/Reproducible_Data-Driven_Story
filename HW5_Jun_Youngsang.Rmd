@@ -1,0 +1,470 @@
+---
+title: "Reproducible Data-Driven Story: To Preserve and Well-manage Old Buildings in Philadelphia"
+author: "Jun, Youngsang"
+date: "November 19, 2024"
+output: 
+  html_document: 
+    theme: readable
+    code_folding: hide
+    quiet: true
+editor_options: 
+  markdown: 
+    wrap: sentence
+---
+
+What would it feel like if my parents or grandparents' generations lived in the same building I live in 30 or 50 years ago? As a Korean student studying abroad, I am not used to that feeling because there are a lot of new cities and new buildings in Korea, but it is very common for the residents of Philadelphia.
+
+"My father also graduated from the University of Pennsylvania, and he used the same dormitory building when he went to school."
+
+"My grandmother also went to this cathedral."
+
+```{r setup, warning = FALSE, message = FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+if (!dir.exists("data")) {
+  dir.create("data")
+}
+
+# Install and Load Libraries
+# install.packages('mapview')
+library(tidyverse)
+library(tidycensus)
+library(sf)
+library(kableExtra)
+library(mapview)
+library(dplyr)
+library(scales)
+library(viridis)
+library(ggtext)
+library(showtext)
+library(maps)
+library(ggplot2)
+library(cowplot)
+library(readxl)
+library(leaflet)
+library(httr)
+remotes::install_github("mikejohnson51/climateR")
+font_add_google("Roboto", "roboto")
+showtext_auto(TRUE)
+
+plotTheme <- theme(
+  plot.title = element_text(face="bold", hjust = 0, size=15, lineheight=0.8),
+  plot.subtitle = element_text(hjust = 0, size = 10, face = "italic", lineheight=0.8, margin = margin(b = 3, t = 6)),  
+        plot.caption = element_text(size = 10, hjust = 0, lineheight=0.9),
+        plot.margin = margin(1.7, 1.7, 1.7, 1.7),
+        text = element_text(family = "roboto"),
+        legend.position="bottom",
+        legend.title = element_text(size = 10))
+
+# Disable Scientific Notation
+options(scipen=999)
+options(tigris_class = "sf")
+
+# Set ACS API Key
+census_api_key("b2835f54d89a4499ba29829c908967b86765b345", overwrite = TRUE)
+```
+
+The following photos of Chestnut Street and 36th Street show that Philadelphia has preserved its streetscape, buildings, and even type of businesses for over 100 years. [1]
+
+```{=html}
+<div class="scroll-container">
+  <div class="sticky-images">
+    <div class="image-wrapper" id="wrapper1">
+      <img src="data/1895.png" class="active">
+      <p class="image-caption">1895</p>
+    </div>
+    <div class="image-wrapper" id="wrapper2">
+      <img src="data/1910.png">
+      <p class="image-caption">1910</p>
+    </div>
+    <div class="image-wrapper" id="wrapper3">
+      <img src="data/1942.png">
+      <p class="image-caption">1942</p>
+    </div>
+    <div class="image-wrapper" id="wrapper4">
+      <img src="data/1962.png">
+      <p class="image-caption">1962</p>
+    </div>
+    <div class="image-wrapper" id="wrapper5">
+      <img src="data/1996.png">
+      <p class="image-caption">1996</p>
+    </div>
+    <div class="image-wrapper" id="wrapper6">
+      <img src="data/2016.png">
+      <p class="image-caption">2016</p>
+    </div>
+  </div>
+</div>
+```
+
+```{=html}
+<style>
+.scroll-container {
+  position: relative;
+  height: 600vh; 
+}
+
+.sticky-images {
+  position: sticky;
+  top: 0;
+  height: 100vh; 
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  flex-direction: column; 
+  background-color: #f8f9fa;
+}
+
+.image-wrapper {
+  display: none; 
+  text-align: center; 
+}
+
+.image-wrapper.active {
+  display: block; 
+}
+
+.image-caption {
+  margin-top: 10px;
+  font-size: 1.2em; 
+  color: #333; 
+}
+</style>
+```
+
+```{=html}
+<script>
+  const wrappers = document.querySelectorAll(".image-wrapper");
+  const scrollContainer = document.querySelector(".scroll-container");
+  const containerHeight = scrollContainer.offsetHeight;
+  const sectionHeight = containerHeight / wrappers.length;
+
+  window.addEventListener("scroll", () => {
+    const scrollPosition = window.scrollY;
+
+    wrappers.forEach((wrapper, index) => {
+      if (scrollPosition >= index * sectionHeight && scrollPosition < (index + 1) * sectionHeight) {
+        wrapper.classList.add("active");
+      } else {
+        wrapper.classList.remove("active");
+      }
+    });
+
+    if (scrollPosition >= (wrappers.length - 1) * sectionHeight) {
+      wrappers[wrappers.length - 1].classList.add("active");
+    }
+  });
+</script>
+```
+
+```{r getACS, warning = FALSE, message = FALSE, results = "hide"}
+
+tracts22_pa <-  
+  get_acs(geography = "tract",
+          variables = c("B08134_001E"), 
+          year=2022, state="PA",
+          geometry=TRUE, progress=FALSE) %>%
+    st_union() %>%
+  st_transform(crs = 'EPSG:32618')
+
+tracts22_nj <-  
+  get_acs(geography = "tract",
+          variables = c("B08134_001E"), 
+          year=2022, state="NJ",
+          geometry=TRUE, progress=FALSE) %>%
+  st_union() %>%
+  st_transform(crs = 'EPSG:32618')
+
+
+# Get ACS Data of Philadelphia County 2010, 2015 and 2020
+tracts10 <-  
+  get_acs(geography = "tract",
+          variables = c("B25034_001E","B25034_002E","B25034_003E","B25034_004E","B25034_005E","B25034_006E","B25034_007E","B25034_008E","B25034_009E","B25034_010E"), 
+          year=2010, state="PA",
+          county="Philadelphia", geometry=TRUE) %>% 
+  st_as_sf(crs = 4326)%>%
+  st_transform('EPSG:32618') # Use NAD 83 CRS
+
+tracts15 <-  
+  get_acs(geography = "tract",
+          variables = c("B25034_001E","B25034_002E","B25034_003E","B25034_004E","B25034_005E","B25034_006E","B25034_007E","B25034_008E","B25034_009E","B25034_010E","B25034_011E"), 
+          year=2015, state="PA",
+          county="Philadelphia", geometry=TRUE) %>% 
+  st_as_sf(crs = 4326)%>%
+  st_transform('EPSG:32618') # Use NAD 83 CRS
+
+tracts20 <-  
+  get_acs(geography = "tract",
+          variables = c("B25034_001E","B25034_002E","B25034_003E","B25034_004E","B25034_005E","B25034_006E","B25034_007E","B25034_008E","B25034_009E","B25034_010E","B25034_011E"), 
+          year=2020, state="PA",
+          county="Philadelphia", geometry=TRUE) %>% 
+  st_as_sf(crs = 4326)%>%
+  st_transform('EPSG:32618') # Use NAD 83 CRS
+
+# Transforming Long Data to Wide Data Using Spread
+tracts10 <- 
+  tracts10 %>%
+  dplyr::select( -NAME, -moe) %>%
+  spread(key = variable, value = estimate) %>%
+  rename(Total = B25034_001, 
+         Y2005_to_Y2009 = B25034_002,
+         Y2000_to_Y2004 = B25034_003, 
+         Y1990_to_Y1999 = B25034_004,
+         Y1980_to_Y1989 = B25034_005, 
+         Y1970_to_Y1979 = B25034_006,
+         Y1960_to_Y1969 = B25034_007,
+         Y1950_to_Y1959 = B25034_008,
+         Y1940_to_Y1949 = B25034_009,
+         Y1939_or_earlier = B25034_010)
+
+tracts20 <- 
+  tracts20 %>%
+  dplyr::select( -NAME, -moe) %>%
+  spread(key = variable, value = estimate) %>%
+  rename(Total = B25034_001, 
+         Y2014_to_Y2019 = B25034_002,
+         Y2010_to_Y2013 = B25034_003, 
+         Y2000_to_Y2009 = B25034_004,
+         Y1990_to_Y1999 = B25034_005, 
+         Y1980_to_Y1989 = B25034_006,
+         Y1970_to_Y1979 = B25034_007,
+         Y1960_to_Y1969 = B25034_008,
+         Y1950_to_Y1959 = B25034_009,
+         Y1940_to_Y1949 = B25034_010,
+         Y1939_or_earlier = B25034_011)
+
+# Create Column that Calculates Proportion of 50 years above, 30 years above, and 10 years below
+tracts10 <- 
+  tracts10 %>%
+  mutate(Y2010_to_Y2013=0,
+         Y2014_to_Y2019=0,
+         year="2010") %>%
+  mutate(Y2000_to_Y2009=Y2000_to_Y2004+Y2005_to_Y2009) %>%
+  mutate(pct50ab = ifelse(Total > 0, (Y1939_or_earlier+Y1940_to_Y1949+Y1950_to_Y1959) / Total, 0),
+         pct30ab = ifelse(Total > 0, (Y1939_or_earlier+Y1940_to_Y1949+Y1950_to_Y1959+Y1960_to_Y1969+Y1970_to_Y1979) / Total, 0),
+         pct10be = ifelse(Total > 0, (Y2005_to_Y2009+Y2000_to_Y2004) / Total, 0))
+
+tracts20 <- 
+  tracts20 %>%
+  mutate(Y2000_to_Y2004=0,
+         Y2005_to_Y2009=0,
+         year="2020") %>%
+  mutate(pct50ab = ifelse(Total > 0, (Y1939_or_earlier+Y1940_to_Y1949+Y1950_to_Y1959+Y1960_to_Y1969) / Total, 0),
+         pct30ab = ifelse(Total > 0, (Y1939_or_earlier+Y1940_to_Y1949+Y1950_to_Y1959+Y1960_to_Y1969+Y1970_to_Y1979+Y1980_to_Y1989) / Total, 0),
+         pct10be = ifelse(Total > 0, (Y2014_to_Y2019+Y2010_to_Y2013) / Total, 0))
+
+# Row Bind of 2010 and 2020
+allTracts <- rbind(tracts10,tracts20)
+
+
+url1 <- "https://services.arcgis.com/fLeGjb7u4uXqeF9q/arcgis/rest/services/Historic_Streets/FeatureServer/0/query?where=1=1&outFields=*&f=geojson"
+
+url2 <- "https://services.arcgis.com/fLeGjb7u4uXqeF9q/arcgis/rest/services/HistoricDistricts_Local/FeatureServer/0/query?where=1=1&outFields=*&f=geojson"
+
+url3 <- "https://services.arcgis.com/fLeGjb7u4uXqeF9q/arcgis/rest/services/Historic_sites_PhilReg/FeatureServer/0/query?where=1=1&outFields=*&f=geojson"
+response1 <- GET(url1)
+response2 <- GET(url2)
+response3 <- GET(url3)
+json_data <- content(response1, as = "text", encoding = "UTF-8")
+json_data2 <- content(response2, as = "text", encoding = "UTF-8")
+json_data3 <- content(response3, as = "text", encoding = "UTF-8")
+
+
+historicStreets <- st_read(json_data) %>%
+  st_as_sf(crs = 4326) %>%
+  st_transform(crs = 'EPSG:32618') 
+
+historicDistricts <- st_read(json_data2) %>%
+  st_as_sf(crs = 4326) %>%
+  st_transform(crs = 'EPSG:32618') 
+
+historicSites <- st_read(json_data3) %>%
+  st_as_sf(crs = 4326) %>%
+  st_transform(crs = 'EPSG:32618') 
+```
+
+## Old Buildings in Philadelphia: A City that is Only Getting Older
+
+This story is also confirmed by data. The following choropleth map shows the proportion of buildings in Philadelphia that are more tha 30 years old by tract. The cyan area represents where 100% of buildings in the tract are more than 30 years old. You can see that the proportion in 2020 has decreased slightly in Center City and the Northeast compared to 2010.
+
+```{r Plot_10-20_2, warning = FALSE, message = FALSE}
+ggplot() +
+      geom_sf(data = tracts22_pa, fill = "#ddd", color = "#fff") +
+    geom_sf(data = tracts22_nj, fill = "#ccc", color = "#fff") +
+  geom_sf(data=allTracts, aes(fill=pct30ab), color="#fff")+
+
+    xlim(475000, 505000) +  # Set x-axis limits for the map (longitude range)
+  ylim(4412000, 4443000) +  # Set y-axis limits for the map (latitude range)
+  theme_void(base_size = 14) +
+  facet_wrap(~year)+
+  scale_fill_gradient(low = "#044", high = "#0FF", breaks = c(0.0, 0.5, 1.0)) + 
+  labs(
+    title = "Proportion of Buildings older than 30 years by Tract, 2010-2020",
+    subtitle = "Year Structure Built, Age of buildings based on the respective census year",
+    caption = "Data: U.S. Census Bureau",
+    fill = "Proportion per Tract") +
+  plotTheme
+```
+
+The following map shows the proportion of buildings in Philadelphia that are more than 50 years old by tract. The cyan area indicates that 100% of buildings in each tract are more than 50 years old. You can see that the proportion of buildings that are more than 50 years old in Center City and the North and Southwest increased slightly over the past decade.
+
+```{r Plot_10-20_3, warning = FALSE, message = FALSE}
+ggplot() +
+      geom_sf(data = tracts22_pa, fill = "#ddd", color = "#fff") +
+    geom_sf(data = tracts22_nj, fill = "#ccc", color = "#fff") +
+  geom_sf(data=allTracts, aes(fill=pct50ab), color="#fff")+
+      xlim(475000, 505000) +  # Set x-axis limits for the map (longitude range)
+  ylim(4412000, 4443000) +  # Set y-axis limits for the map (latitude range)
+  theme_void(base_size = 14) +
+  facet_wrap(~year)+
+  scale_fill_gradient(low = "#044", high = "#0FF", breaks = c(0.0, 0.5, 1.0)) + 
+  labs(
+    title = "Proportion of Buildings older than 50 years by Tract, 2010-2020",
+    subtitle = "Year Structure Built, Age of buildings based on the respective census year",
+    caption = "Data: U.S. Census Bureau",
+    fill = "Proportion per Tract") +
+  plotTheme
+```
+
+Meanwhile, the proportion of buildings built less than 10 years ago in each tract is as shown below. The Center City area was noticeably high in both 2010 and 2020, and the proportion increased particularly in 2020. It can be seen that construction has been active recently. In other tracts, there are hardly any buildings built in the past 10 years.
+
+```{r Plot_10-20_4, warning = FALSE, message = FALSE}
+ggplot() +
+  geom_sf(data = tracts22_pa, fill = "#ddd", color = "#fff") +
+    geom_sf(data = tracts22_nj, fill = "#ccc", color = "#fff") +
+  geom_sf(data=allTracts, aes(fill=pct10be), color="#fff")+
+      xlim(475000, 505000) +  # Set x-axis limits for the map (longitude range)
+  ylim(4412000, 4443000) +  # Set y-axis limits for the map (latitude range)
+  theme_void(base_size = 14) +
+  facet_wrap(~year)+
+  scale_fill_gradient(low = "#044", high = "#0FF", breaks = c(0.0, 0.5, 1.0)) + 
+  labs(
+    title = "Proportion of Buildings less than 10 years old by Tract, 2010-2020",
+    subtitle = "Year Structure Built, Age of buildings based on the respective census year",
+    caption = "Data: U.S. Census Bureau",
+    fill = "Proportion per Tract") +
+  plotTheme
+```
+
+## Historical Places in Philadelphia, and What Else?
+
+The Philadelphia Historical Commission was established in 1955 to protect historic buildings, sites, structures, and districts throughout Philadelphia. Since then, all properties of historical places in Philadelphia have been managed by the City of Philadelphia by undergoing a nomination process and being added to the register. The following map shows the locations of Philadelphia's historic districts, sites, and streets. As of October 17, 2024, the city operates 43 historic districts, 2,141 historic sites (including 141 additional sites that lack official addresses and have approximate addresses), and 487 historic streets.
+
+Yet many Philadelphians believe that many of Philadelphia's buildings, despite their preservation value, are not protected as much as they should be. Actually, only about 2% of the city’s buildings are historically preserved — half the national average. [2] Since 1983, the number of historic districts designated was highest between 1990 and 2000 and kept decreasing, which represents the City need to expand the scope of preserved buildings and try to diversify the method of managing old buildings in Philadelphia.
+
+
+```{r Plot_10-20_5, warning = FALSE, message = FALSE}
+historicPlaces <- readxl::read_xlsx('./data/Phila-Reg-No-OPA-6-26-2024.xlsx')
+historicPlaces_trans <- historicPlaces %>%
+  st_as_sf(coords=c("lng","lat"), crs=4326) %>%
+  st_transform('EPSG:32618') # Use NAD 83 CRS
+```
+
+```{r Plot_10-20_6, fig.width=10, warning = FALSE, message = FALSE}
+historicDistricts$category <- "Districts and Sites"
+historicStreets$category <- "Streets"
+historicSites$category <- "Districts and Sites"
+historicSites$datemdy <- mdy(historicSites$DISTRICTDESDATE)
+historicSites$year <- year(historicSites$datemdy)
+
+category_colors <- c(
+  "Districts and Sites" = "#335599",      
+  "Streets" = "#3357FF",       
+  "Additional Sites" = "#FFC300"  
+)
+
+map4 <- ggplot() + 
+    geom_sf(data = tracts22_pa, fill = "#ddd", color = "#fff") +
+    geom_sf(data = tracts22_nj, fill = "#ccc", color = "#fff") +
+  geom_sf(data=st_union(tracts20), color="#fff") +
+  
+  geom_sf(data=historicDistricts, aes(color = category)) +
+  geom_sf(data=historicStreets, aes(color = category)) +
+  geom_sf(data=historicSites, aes(color = category)) +
+  geom_point(
+    data=historicPlaces_trans, aes(geometry=geometry, color = "Additional Sites"), 
+    stat = "sf_coordinates", size=0.5)+
+   xlim(475000, 505000) +  # Set x-axis limits for the map (longitude range)
+  ylim(4412000, 4443000) +  # Set y-axis limits for the map (latitude range)
+  theme_void(base_size = 14) +
+  labs(
+    title = "Historical Places in Philadelphia",
+    subtitle = "October, 2024",
+    caption = "Data: City of Philadelphia",
+    color = "") +
+  scale_color_manual(values = category_colors) +
+  plotTheme
+
+map5 <- historicSites %>% 
+  subset(year<2025) %>%
+  mutate(
+    year_bin = cut(
+      year,
+      breaks = c(1980, 1990, 2000, 2010, 2020, 2025), 
+      labels = c("1980-1990", "1990-2000", "2000-2010", "2010-2020", "2020-2024"),  
+      include.lowest = TRUE,  
+      right = FALSE  
+    )) %>%
+ggplot(aes(x = year_bin)) +
+  geom_bar(fill = "#69b3a2") +
+  geom_text(
+    stat = "count",             
+    aes(label = after_stat(count)), 
+    vjust = -0.3,               
+    size = 5                    
+  ) + 
+  labs(
+    title = "Number of historic districts designated by year",
+    subtitle = "1980-2024, Philadelphia",
+    caption = "Data: City of Philadelphia",
+    x = "Year",
+    y = "Count"
+  ) +
+  theme_minimal(base_size = 14)+plotTheme+
+  theme(
+    axis.text.y = element_blank(),  
+    axis.ticks.y = element_blank(), 
+    panel.grid.major.y = element_blank(), 
+    panel.grid.minor.y = element_blank(),
+    panel.grid.major.x = element_blank(),   
+    panel.grid.minor.x = element_blank()  
+  )
+  
+plot_grid(map4, map5, ncol = 2)
+```
+
+
+```{r}
+mv <- mapview(st_union(tracts20), label = NULL, popup = NULL, lwd = 3, color = "#0FF", col.regions = "transparent", alpha = 0.7, map.types = "OpenStreetMap") +
+  mapview(historicPlaces_trans, label = "Resource Name", col.regions = "#0ff", alpha = 1.0, cex = 3, layer.name="Historic Sites (additional)")+
+  mapview(historicDistricts, label = "NAME", col.regions = "#0ff", alpha = 1.0, cex = 3, layer.name="Historic Districts")+
+  mapview(historicStreets, label = "ON_STREET", col.regions = "#00f", alpha = 1.0, cex = 3, layer.name="Historic Streets")+
+  mapview(historicSites, label = "LOC", col.regions = "#0ff", alpha = 1.0, cex = 3, layer.name="Historic Sites")
+
+mv
+```
+
+
+
+## Epilogue: would technology help preserve old buildings?
+
+Nobody can afford to spend their whole money maintaining a historic building, even its infinite value. The report, “Upgrades Work in Philadelphia’s Historic Buildings” by the Better Buildings Neighborhood Program, shows how integrating modern technologies into historic structures can bring numerous benefits.[4] By improving energy efficiency and reducing environmental impact, these upgrades help ensure that historic buildings remain functional, accessible, and sustainable in the modern era, while maintaining their historical integrity.
+
+Philadelphia’s rich history is embedded in its streets, buildings, and neighborhoods. As Philadelphia moves forward preserving its historical legacy, while embracing innovation, ensures that future generations can experience and appreciate the stories these buildings tell.
+
+References:
+
+[1] Historic Maps and Imagery in the Introduction: City of Philadelphia Open Maps <https://openmaps.phila.gov/>
+
+[2] Why so few of Philadelphia’s old buildings are historically protected <https://whyy.org/episodes/why-so-few-of-philadelphias-buildings-are-historically-protected/>
+
+[3] Philadelphia Historical Commission <https://www.phila.gov/departments/philadelphia-historical-commission/about/commission/>
+
+[4] Upgrades Work in Philadelphia's Historic Buildings, Better Buildings Neighborhood Program, Department of Energy <https://www.energy.gov/eere/better-buildings-neighborhood-program/upgrades-work-philadelphias-historic-buildings>
+
+
+Score to Myself: 2.5/3
+
+Why I gave myself that score: The narrative is better compared to the September version, but it still lacks sufficient data visualizations that creates clear a-ha moment.
+
+What I would do to bring it to a 3: Find an example by buildings that are preserved and not preserved, and present results of spatial analysis not just show data.
+
